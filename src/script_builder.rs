@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 #[derive(Default)]
 pub(crate) enum ScriptKind {
     #[default]
@@ -11,6 +13,14 @@ pub(crate) struct ScriptBuilder<'a> {
     cflags: Option<&'a str>,
     target_name: Option<&'a str>,
     src_file_names: Option<&'a str>
+}
+
+pub(crate) struct UnspecifiedField(&'static str);
+
+impl Debug for UnspecifiedField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self.0, f)
+    }
 }
 
 impl<'a> ScriptBuilder<'a> {
@@ -33,8 +43,8 @@ impl<'a> ScriptBuilder<'a> {
         self
     }
 
-    pub(crate) fn build(self) -> String {
-        match self.kind {
+    pub(crate) fn build(self) -> Result<String, UnspecifiedField> {
+        Ok(match self.kind {
             ScriptKind::Build => {
                 format!(
                     "@echo off\
@@ -53,9 +63,9 @@ impl<'a> ScriptBuilder<'a> {
                     \nif %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%\
                     \necho build success.\
                     \nendlocal",
-                    self.target_name.unwrap(),
-                    self.src_file_names.unwrap(),
-                    self.cflags.unwrap()
+                    self.target_name.ok_or(UnspecifiedField("target_name"))?,
+                    self.src_file_names.ok_or(UnspecifiedField("src_file_names"))?,
+                    self.cflags.ok_or(UnspecifiedField("cflags"))?
                 )
             }
             ScriptKind::Run => {
@@ -72,9 +82,9 @@ impl<'a> ScriptBuilder<'a> {
                     \n%TARGET_NAME% %CLI_ARGS%\
                     \npopd\
                     \npopd",
-                    self.target_name.unwrap()
+                    self.target_name.ok_or(UnspecifiedField("target_name"))?
                 )
             }
-        }
+        })
     } 
 }

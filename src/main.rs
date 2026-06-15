@@ -1,6 +1,6 @@
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
-use crate::init::{Init, InitOptions};
+use crate::{init::{Init, InitOptions}};
 
 mod init;
 mod script_builder;
@@ -8,21 +8,44 @@ mod script_builder;
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-struct Args {
+struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
 }
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    Raylib
+    Raylib,
+    Add {
+        #[command(subcommand)]
+        action: AddCommand
+    },
+    Remove {
+        #[command(subcommand)]
+        action: RemoveCommand
+    }
+}
+
+#[derive(Subcommand, Debug)]
+enum AddCommand {
+    Cflags(MultiArgs)
+}
+
+#[derive(Subcommand, Debug)]
+enum RemoveCommand {
+    Cflags(MultiArgs)
+}
+
+#[derive(Args, Debug)]
+struct MultiArgs {
+    args: String
 }
 
 fn main() {
-    let args = Args::parse();
+    let cli = Cli::parse();
     let mut app = Init::new();
 
-    let Some(command) = args.command else {
+    let Some(command) = cli.command else {
         app.init(None).unwrap();
         return;
    };
@@ -31,5 +54,15 @@ fn main() {
         Command::Raylib => {
             app.init(Some(InitOptions::raylib(None))).unwrap();
         },
+        Command::Add { action } => match action {
+            AddCommand::Cflags(MultiArgs{ args }) => {
+                app.add_cflags(&args).unwrap();
+            }
+        }
+        Command::Remove { action } => match action {
+            RemoveCommand::Cflags(MultiArgs { args }) => {
+                app.remove_cflags(&args).unwrap();
+            }
+        }
     }
 }
