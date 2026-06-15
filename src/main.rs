@@ -23,6 +23,14 @@ enum Command {
     Remove {
         #[command(subcommand)]
         action: RemoveCommand
+    },
+    Reset {
+        #[command(subcommand)]
+        action: ResetCommand
+    },
+    List {
+        #[command(subcommand)]
+        action: ListCommand
     }
 }
 
@@ -34,6 +42,16 @@ enum AddCommand {
 #[derive(Subcommand, Debug)]
 enum RemoveCommand {
     Cflags(MultiArgs)
+}
+
+#[derive(Subcommand, Debug)]
+enum ResetCommand {
+    Cflags
+}
+
+#[derive(Subcommand, Debug)]
+enum ListCommand {
+    Cflags
 }
 
 #[derive(Args, Debug)]
@@ -63,6 +81,12 @@ fn main() {
             RemoveCommand::Cflags(MultiArgs { args }) => {
                 app.remove_cflags(&args).unwrap();
             }
+        }
+        Command::Reset { action } => match action {
+            ResetCommand::Cflags => app.reset_cflags().unwrap()
+        },
+        Command::List { action } => match action {
+            ListCommand::Cflags => app.list_cflags().unwrap()
         }
     }
 }

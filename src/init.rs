@@ -1,6 +1,6 @@
 use std::{borrow::Cow, cell::{LazyCell, Ref, RefCell}, collections::HashSet, fmt::Display, fs, path::{Path, PathBuf}, process::Command};
 
-use crate::{init::Error::{CFlagNotUnique, CFlagNotFound, ParseError}, script_builder::{ScriptBuilder, ScriptKind}};
+use crate::{init::Error::{CFlagNotFound, CFlagNotUnique, ParseError}, script_builder::{ScriptBuilder, ScriptKind}};
 
 pub(crate) struct ConfigCache<'a> {
     src_file_names: Cow<'a, str>,
@@ -20,7 +20,14 @@ impl ConfigCache<'_> {
     }
 
     fn cflags(&self) -> &str {
-        self.cflags.as_ref().map(|c| c.as_ref()).unwrap_or(TEMPLATE_CFLAGS_DEFAULT)
+        self.cflags.as_ref().map(|c| c.as_ref()).unwrap_or_else(|| self.cflags_default())
+    }
+
+    fn cflags_default(&self) -> &str {
+        match self.template_kind {
+            TemplateKind::Main => TEMPLATE_CFLAGS_DEFAULT,
+            _ => todo!()
+        }
     }
 
     fn cache(&self) -> String {
@@ -110,6 +117,7 @@ pub(crate) struct Init<'a> {
     root_folder_canonical: LazyCell<Result<PathBuf, std::io::Error>>,
     config: RefCell<Option<ConfigCache<'a>>>,
     init_path_cache: RefCell<Option<PathBuf>>,
+    updated_flags: Option<String>
 }
 
 pub(crate) enum TemplateKind {
@@ -168,7 +176,8 @@ impl Init<'_> {
             root_folder_display: LazyCell::new(|| { std::path::absolute(".") }),
             root_folder_canonical: LazyCell::new(|| { std::fs::canonicalize(".") }),
             config: RefCell::new(None),
-            init_path_cache: RefCell::new(None)
+            init_path_cache: RefCell::new(None),
+            updated_flags: None,
         }
     }
 
@@ -292,42 +301,79 @@ impl Init<'_> {
         Ok(())
     }
 
-    pub(crate) fn add_cflags(&self, cflags: &str) -> Result<(), Error> {
-        let init_path = self.init_path()?;
+    pub(crate) fn add_cflags(&mut self, cflags: &str) -> Result<(), Error> {
+        self.updated_flags = Some({
+            let init_path = self.init_path()?;
 
-        if !init_path.exists() {
-            return Err(Error::NeedInit(self.init_path_take()?));
-        }
+            if !init_path.exists() {
+                return Err(Error::NeedInit(self.init_path_take()?));
+            }
 
-        let config = self.config(Some(InitOptions::from_file()))?;
-        let old_flags = config.cflags.as_ref().unwrap();
-        let old_flags_hs = old_flags.split_whitespace().collect::<HashSet<&str>>();
+            let config = self.config(Some(InitOptions::from_file()))?;
+            let old_flags = config.cflags.as_ref().unwrap();
+            let old_flags_hs = old_flags.split_whitespace().collect::<HashSet<&str>>();
 
-        let cflags = cflags.split_whitespace().map(|f| {
-            if !f.starts_with("-") { format!("-{}", f.trim())} else { f.trim().to_string() }
-        }).collect::<Vec<String>>();
+            let cflags = cflags.split_whitespace().map(|f| {
+                if !f.starts_with("-") { format!("-{}", f.trim())} else { f.trim().to_string() }
+            }).collect::<Vec<String>>();
         
-        if let Some(f) = cflags.iter().find(|f| old_flags_hs.contains(f.as_str())) {
-            return Err(CFlagNotUnique(f.into())); 
-        }
+            if let Some(f) = cflags.iter().find(|f| old_flags_hs.contains(f.as_str())) {
+                return Err(CFlagNotUnique(f.into())); 
+            }
 
-        let new_flags = format!("{} {}", old_flags, cflags.join(" "));
-        println!("New cflags {}", new_flags);
-
-        let build = ScriptBuilder::new(ScriptKind::Build)
-            .cflags(&new_flags)
-            .src_file_names(&config.src_file_names)
-            .target_name(&config.target_executable_name)
-            .build()
-            .unwrap();
-
-        fs::write(init_path.join("cflagswin"), new_flags)?;
-        fs::write(self.root_folder_canonical.as_ref()?.join("build.bat"), build)?;
+            let new_flags = format!("{} {}", old_flags, cflags.join(" "));
+            println!("New cflags {}", new_flags);
+            new_flags
+        });
         
         Ok(())
     }
 
-    pub(crate) fn remove_cflags(&self, cflags: &str) -> Result<(), Error> {
+    pub(crate) fn remove_cflags(&mut self, cflags: &str) -> Result<(), Error> {
+        self.updated_flags = Some({
+            let init_path = self.init_path()?;
+
+            if !init_path.exists() {
+                return Err(Error::NeedInit(self.init_path_take()?));
+            }
+
+            let config = self.config(Some(InitOptions::from_file()))?;
+            let mut old_flags = config.cflags.as_ref().unwrap().split_whitespace().collect::<HashSet<&str>>();
+
+            if let Some(f) = cflags
+                .split_whitespace()
+                .map(|f| { if !f.starts_with("-") { format!("-{}", f)} else { f.to_string() }})
+                .find(|f| !old_flags.remove(f.as_str())) 
+            {
+                return Err(CFlagNotFound(f.into())); 
+            }
+
+            let new_flags = old_flags.into_iter().collect::<Vec<&str>>().join(" ");
+
+            println!("New cflags {}", new_flags);
+            new_flags
+        });
+
+        Ok(())
+    }
+
+    pub(crate) fn reset_cflags(&mut self) -> Result<(), Error> {
+        self.updated_flags = Some({
+            let init_path = self.init_path()?;
+
+            if !init_path.exists() {
+                return Err(Error::NeedInit(self.init_path_take()?));
+            }
+
+            let config = self.config(Some(InitOptions::from_file()))?;
+
+            config.cflags_default().to_owned()
+        });
+
+        Ok(())
+    }
+
+    pub(crate) fn list_cflags(&self) -> Result<(), Error> {
         let init_path = self.init_path()?;
 
         if !init_path.exists() {
@@ -335,30 +381,33 @@ impl Init<'_> {
         }
 
         let config = self.config(Some(InitOptions::from_file()))?;
-        let mut old_flags = config.cflags.as_ref().unwrap().split_whitespace().collect::<HashSet<&str>>();
 
-        if let Some(f) = cflags
-            .split_whitespace()
-            .map(|f| { if !f.starts_with("-") { format!("-{}", f)} else { f.to_string() }})
-            .find(|f| !old_flags.remove(f.as_str())) 
-        {
-            return Err(CFlagNotFound(f.into())); 
+        if let Some(cflags ) = config.cflags.as_ref() {
+            println!("You currently have these cflags set: '{}'.", cflags);
+        } else {
+            println!("You don't have any cflags set");
         }
 
-        let new_flags = old_flags.into_iter().collect::<Vec<&str>>().join(" ");
-
-        println!("New cflags {}", new_flags);
-
-        let build = ScriptBuilder::new(ScriptKind::Build)
-            .cflags(&new_flags)
-            .src_file_names(&config.src_file_names)
-            .target_name(&config.target_executable_name)
-            .build()
-            .unwrap();
-
-        fs::write(init_path.join("cflagswin"), new_flags)?;
-        fs::write(self.root_folder_canonical.as_ref()?.join("build.bat"), build)?;
-
         Ok(())
+    }
+}
+
+impl Drop for Init<'_> {
+    fn drop(&mut self) {
+        if let Some(cflags) = &self.updated_flags {
+            let config = self.config.borrow();
+            let config = config.as_ref().unwrap();
+            let init_path = self.init_path().unwrap();
+
+            let build = ScriptBuilder::new(ScriptKind::Build)
+                .cflags(&cflags)
+                .src_file_names(&config.src_file_names)
+                .target_name(&config.target_executable_name)
+                .build()
+                .unwrap();
+
+            fs::write(init_path.join("cflagswin"), cflags).unwrap();
+            fs::write(self.root_folder_canonical.as_ref().unwrap().join("build.bat"), build).unwrap();
+        }
     }
 }
