@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use crate::init::{Init, InitOptions};
 
 mod init;
+mod script_builder;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]

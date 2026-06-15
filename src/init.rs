@@ -1,5 +1,7 @@
 use std::{borrow::Cow, cell::{LazyCell, Ref, RefCell}, fmt::Display, fs, path::PathBuf, process::Command};
 
+use crate::script_builder::{ScriptBuilder, ScriptKind};
+
 pub(crate) struct ConfigCache<'a> {
     src_file_names: Cow<'a, str>,
     cflags: Option<Cow<'a, str>>,
@@ -13,7 +15,7 @@ impl ConfigCache<'_> {
     fn template(&self) -> &'static str {
         match self.template_kind {
             TemplateKind::Main => TEMPLATE_C_DEFAULT,
-            _ => todo!(),
+            TemplateKind::Raylib => todo!(),
         }
     }
 
@@ -30,27 +32,13 @@ impl ConfigCache<'_> {
 
     fn build_win(&self) -> Ref<'_, str> {
        if self.build_script_cache.borrow().is_none() {
-            *self.build_script_cache.borrow_mut() = Some(format!(
-                "@echo off\
-                \nset TARGET_NAME={}.exe\
-                \nset SRC_FILE_NAMES={}\
-                \nset ROOT_FOLDER=%~dp0\
-                \nset CFLAGS={}\
-                \nsetlocal enabledelayedexpansion\
-                \nset SRC_PATHS=\
-                \nfor %%i in (%SRC_FILE_NAMES%) do (set SRC_PATHS=!SRC_PATHS! %ROOT_FOLDER%src\\%%i)\
-                \npushd %ROOT_FOLDER%\
-                \nif not exist bin mkdir bin\
-                \n@echo on\
-                \ngcc %SRC_PATHS% -o bin/%TARGET_NAME% %CFLAGS%\
-                \n@echo off\
-                \nif %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%\
-                \necho build success.\
-                \nendlocal",
-                self.target_executable_name,
-                self.src_file_names,
-                self.cflags()
-            ));
+            let script = ScriptBuilder::new(ScriptKind::Build)
+                .cflags(self.cflags())
+                .src_file_names(&self.src_file_names)
+                .target_name(&self.target_executable_name)
+                .build();
+
+            *self.build_script_cache.borrow_mut() = Some(script);
         }
 
         Ref::map(self.build_script_cache.borrow(), |opt| opt.as_ref().map(|s| s.as_str()).unwrap())
@@ -58,21 +46,11 @@ impl ConfigCache<'_> {
 
     fn run(&self) -> Ref<'_, str> {
        if self.run_script_cache.borrow().is_none() {
-            *self.run_script_cache.borrow_mut() = Some(format!(
-                "@echo off\
-                \nset TARGET_NAME={}.exe\
-                \nset ROOT_FOLDER=%~dp0\
-                \nset CLI_ARGS=%*\
-                \npushd %ROOT_FOLDER%\
-                \ncall ./build.bat\
-                \nif %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%\
-                \necho:\
-                \npushd bin\
-                \n%TARGET_NAME% %CLI_ARGS%\
-                \npopd\
-                \npopd",
-                self.target_executable_name
-            ));
+            let script = ScriptBuilder::new(ScriptKind::Run)
+                .target_name(&self.target_executable_name)
+                .build();
+
+            *self.run_script_cache.borrow_mut() = Some(script);
         }
 
         Ref::map(self.run_script_cache.borrow(), |opt| opt.as_ref().map(|s| s.as_str()).unwrap())
