@@ -10,47 +10,44 @@ mod script_builder;
 #[command(version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Command>,
+    command: Option<ActionCommand>,
 }
 
 #[derive(Subcommand, Debug)]
-enum Command {
+enum ActionCommand {
+    #[command(visible_aliases = ["rl"])]
     Raylib,
+    #[command(visible_aliases = ["a"])]
     Add {
         #[command(subcommand)]
-        action: AddCommand
+        target: TargetCommandArgs
     },
+    #[command(visible_aliases = ["r", "rm"])]
     Remove {
         #[command(subcommand)]
-        action: RemoveCommand
+        target: TargetCommandArgs
     },
-    Reset {
-        #[command(subcommand)]
-        action: ResetCommand
-    },
+    #[command(visible_aliases = ["l", "ls"])]
     List {
         #[command(subcommand)]
-        action: ListCommand
+        target: TargetCommand
+    },
+    #[command(visible_aliases = ["res"])]
+    Reset {
+        #[command(subcommand)]
+        target: TargetCommand
     }
 }
 
 #[derive(Subcommand, Debug)]
-enum AddCommand {
+enum TargetCommandArgs {
+    #[command(visible_aliases = ["f", "flag", "flags"])]
     Cflags(MultiArgs)
 }
 
 #[derive(Subcommand, Debug)]
-enum RemoveCommand {
-    Cflags(MultiArgs)
-}
-
-#[derive(Subcommand, Debug)]
-enum ResetCommand {
-    Cflags
-}
-
-#[derive(Subcommand, Debug)]
-enum ListCommand {
+enum TargetCommand {
+    #[command(visible_aliases = ["f", "flag", "flags"])]
     Cflags
 }
 
@@ -61,32 +58,32 @@ struct MultiArgs {
 
 fn main() {
     let cli = Cli::parse();
-    let mut app = Init::new();
+    let mut init = Init::new();
 
     let Some(command) = cli.command else {
-        app.init(None).unwrap();
+        init.init(None).unwrap();
         return;
-   };
+    };
 
     match command {
-        Command::Raylib => {
-            app.init(Some(InitOptions::raylib(None))).unwrap();
+        ActionCommand::Raylib => {
+            init.init(Some(InitOptions::raylib(None)))
         },
-        Command::Add { action } => match action {
-            AddCommand::Cflags(MultiArgs{ args }) => {
-                app.add_cflags(&args).unwrap();
+        ActionCommand::Add { target } => match target {
+            TargetCommandArgs::Cflags(MultiArgs{ args }) => {
+                init.add_cflags(&args)
             }
         }
-        Command::Remove { action } => match action {
-            RemoveCommand::Cflags(MultiArgs { args }) => {
-                app.remove_cflags(&args).unwrap();
+        ActionCommand::Remove { target } => match target {
+            TargetCommandArgs::Cflags(MultiArgs { args }) => {
+                init.remove_cflags(&args)
             }
         }
-        Command::Reset { action } => match action {
-            ResetCommand::Cflags => app.reset_cflags().unwrap()
+        ActionCommand::Reset { target } => match target {
+            TargetCommand::Cflags => init.reset_cflags()
         },
-        Command::List { action } => match action {
-            ListCommand::Cflags => app.list_cflags().unwrap()
+        ActionCommand::List { target } => match target {
+            TargetCommand::Cflags => init.list_cflags()
         }
-    }
+    }.unwrap();
 }

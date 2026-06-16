@@ -257,7 +257,7 @@ impl Init<'_> {
         let init_path = self.init_path()?;
 
         if init_path.exists() {
-            return Err(Error::AlreadyExists(self.init_path_take()?));
+            return Err(Error::AlreadyExists(init_path.to_owned()));
         }
 
         let src_path = root_folder_canonical.join("src");
@@ -306,7 +306,7 @@ impl Init<'_> {
             let init_path = self.init_path()?;
 
             if !init_path.exists() {
-                return Err(Error::NeedInit(self.init_path_take()?));
+                return Err(Error::NeedInit(init_path.to_owned()));
             }
 
             let config = self.config(Some(InitOptions::from_file()))?;
