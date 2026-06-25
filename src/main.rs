@@ -1,9 +1,13 @@
+use std::mem::ManuallyDrop;
+
 use clap::{Args, Parser, Subcommand};
 
 use crate::{init::{Init, InitOptions}};
 
 mod init;
 mod script_builder;
+mod dependency;
+mod common;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -42,13 +46,17 @@ enum ActionCommand {
 #[derive(Subcommand, Debug)]
 enum TargetCommandArgs {
     #[command(visible_aliases = ["f", "flag", "flags"])]
-    Cflags(MultiArgs)
+    Cflags(MultiArgs),
+    #[command(visible_aliases = ["d", "dep"])]
+    Deps(MultiArgs)
 }
 
 #[derive(Subcommand, Debug)]
 enum TargetCommand {
     #[command(visible_aliases = ["f", "flag", "flags"])]
-    Cflags
+    Cflags,
+    #[command(visible_aliases = ["d", "dep"])]
+    Deps,
 }
 
 #[derive(Args, Debug)]
@@ -56,11 +64,11 @@ struct MultiArgs {
     args: String
 }
 
-fn main() {
-    let cli = Cli::parse();
+fn main() { 
+    let cli = ManuallyDrop::new(Cli::parse());
     let mut init = Init::new();
 
-    let Some(command) = cli.command else {
+    let Some(ref command) = cli.command else {
         init.init(None).unwrap();
         return;
     };
@@ -70,20 +78,20 @@ fn main() {
             init.init(Some(InitOptions::raylib(None)))
         },
         ActionCommand::Add { target } => match target {
-            TargetCommandArgs::Cflags(MultiArgs{ args }) => {
-                init.add_cflags(&args)
-            }
+            TargetCommandArgs::Cflags(MultiArgs{ args }) => init.add_cflags(&args),
+            TargetCommandArgs::Deps(MultiArgs { args }) => init.add_dependencies(&args), 
         }
         ActionCommand::Remove { target } => match target {
-            TargetCommandArgs::Cflags(MultiArgs { args }) => {
-                init.remove_cflags(&args)
-            }
+            TargetCommandArgs::Cflags(MultiArgs { args }) => init.remove_cflags(&args),
+            TargetCommandArgs::Deps(MultiArgs { args }) => init.remove_dependencies_by_names(&args),
         }
         ActionCommand::Reset { target } => match target {
-            TargetCommand::Cflags => init.reset_cflags()
+            TargetCommand::Cflags => init.reset_cflags(),
+            TargetCommand::Deps => init.reset_dependencies(),
         },
         ActionCommand::List { target } => match target {
-            TargetCommand::Cflags => init.list_cflags()
+            TargetCommand::Cflags => init.list_cflags(),
+            TargetCommand::Deps => init.list_dependencies(),
         }
     }.unwrap();
 }
